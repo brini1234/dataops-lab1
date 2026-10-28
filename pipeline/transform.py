@@ -1,6 +1,7 @@
 import pandas as pd
 
 MAX_UNIT_PRICE = 1000
+ALLOWED_COUNTRIES = ["France", "Germany", "Italy", "Morocco", "Tunisia"]
 
 def _flag(df, mask, reason):
     """Mark the rows selected by `mask` as rejected, unless already rejected."""
@@ -30,6 +31,9 @@ def clean_orders(df):
     # Rule 5 - uniqueness: one row per order_id, keep the first
     _flag(df, df.duplicated("order_id", keep="first"), "duplicate_order_id")
 
+    # Rule 6 - validity: the shop only sells to these countries
+    _flag(df, ~df["country"].isin(ALLOWED_COUNTRIES), "unknown_country")
+    
     rejected = df[df["reject_reason"].notna()]
     clean = df[df["reject_reason"].isna()].drop(columns="reject_reason")
     return clean, rejected
