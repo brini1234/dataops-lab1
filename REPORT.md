@@ -146,7 +146,10 @@ Tout programme qui lance le pipeline peut lire ce code : un planificateur de tâ
 ## Historique Git
 
 ```
-* 1bff7d9 (HEAD -> main, tag: data-v2) Data v2: late orders for 2026-10-05
+* ffe738a (HEAD -> main, origin/main) Add bonus to TP2 report
+* 9882a4e Describe the report as a DVC stage
+* 34ec7d9 Add TP2 report
+* 1bff7d9 (tag: data-v2) Data v2: late orders for 2026-10-05
 * ac69513 Add the DVC remote
 * 47dd09b (tag: data-v1) Track raw data with DVC
 *   3237502 Merge the country rule
@@ -154,7 +157,7 @@ Tout programme qui lance le pipeline peut lire ce code : un planificateur de tâ
 | * b54abda (feature/country-rule) Reject orders from countries the shop does not sell to
 |/
 * 12d0552 Finish TP1, add DVC to requirements
-* c400ec8 (origin/main) Add CI workflow
+* c400ec8 Add CI workflow
 * 6a34da0 Add REPORT.md
 * 7bd446e Add day 2 and day 3 files
 * 122e846 Add pipeline, data checks and unit tests
