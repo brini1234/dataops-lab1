@@ -160,3 +160,6 @@ Tout programme qui lance le pipeline peut lire ce code : un planificateur de tâ
 * 122e846 Add pipeline, data checks and unit tests
 * a0716d3 Empty project with requirements
 ```
+
+## Bonus
+Étape DVC `report` créée avec `dvc stage add` (`dvc.yaml`). Le second `dvc repro` ne relance pas le pipeline car rien n'a changé. `dvc.lock` enregistre les empreintes des entrées (code, données) et du rapport produit. Le code et les pointeurs `.dvc` sont poussés sur GitHub, pas les données.
