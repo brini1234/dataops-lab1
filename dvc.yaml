@@ -1,0 +1,9 @@
+stages:
+  report:
+    cmd: python run_pipeline.py data/raw/orders_day1.csv
+    deps:
+    - data/raw
+    - pipeline
+    - run_pipeline.py
+    outs:
+    - data/output/revenue_by_country.csv
