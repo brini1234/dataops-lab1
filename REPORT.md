@@ -166,3 +166,76 @@ Tout programme qui lance le pipeline peut lire ce code : un planificateur de tâ
 
 ## Bonus
 Étape DVC `report` créée avec `dvc stage add` (`dvc.yaml`). Le second `dvc repro` ne relance pas le pipeline car rien n'a changé. `dvc.lock` enregistre les empreintes des entrées (code, données) et du rapport produit. Le code et les pointeurs `.dvc` sont poussés sur GitHub, pas les données.
+
+---
+
+# TP 3 - Du pipeline Python à l'ELT moderne avec DuckDB et dbt
+
+## TP3
+
+## Étape 1 - Extract + Load
+
+**Q1.** Si DuckDB devinait les types, une colonne lue comme un entier ferait échouer le chargement (ou perdrait la ligne) le jour où une quantité vaut « deux ». En chargeant tout en texte (`all_varchar = true`), toutes les lignes arrivent telles quelles, et je choisis les types ensuite, dans le staging, avec `try_cast`.
+
+**Q2.** Le total naïf en SQL vaut 13950.6, comme avec l'ancien script Python. Ce n'est donc pas le langage (SQL ou Python) qui rend un pipeline fiable, mais les règles de qualité, les tests et l'arrêt de la chaîne quand quelque chose ne va pas.
+
+**Q3.** Comme le brut reste dans l'entrepôt, je peux corriger la règle et tout rejouer depuis `raw.orders`, sans redemander le fichier à la source. Je peux aussi comparer le brut avec le résultat nettoyé pour comprendre une erreur.
+
+## Étape 2 - Le projet dbt
+
+**Q4.** Dans `profiles.yml`, il faudrait remplacer `type: duckdb` et `path` par le type du vrai entrepôt (Snowflake, BigQuery...) et ses paramètres : compte, utilisateur, base de données, schéma. Le mot de passe ne s'écrit jamais en clair dans le fichier : on le lit dans une variable d'environnement (par exemple avec `{{ env_var('...') }}`) ou dans un gestionnaire de secrets.
+
+## Étape 3 - Le modèle de staging
+
+**Q5.** Le staging répare ce qui peut l'être mais ne supprime aucune ligne. La commande 1013 est rejetée plus tard, dans `int_orders_checked`, avec le motif `invalid_date` : on garde la trace de pourquoi elle a été écartée, au lieu de la faire disparaître sans rien dire.
+
+**Q6.** Quand on lit une vue, DuckDB relance la requête enregistrée sur la table brute. C'est acceptable pour le staging, car il ne fait que du typage et du nettoyage léger, donc il coûte très peu et reste toujours à jour avec le brut.
+
+## Étape 4 - Les six règles et le rapport
+
+**Q7.** Dans `target/compiled/shop/models/intermediate/int_orders_checked.sql`, dbt a remplacé `{{ ref('stg_orders') }}` par le vrai nom de la vue, de la forme `"warehouse"."main"."stg_orders"`.
+
+**Q8.** `row_number() over (partition by order_id order by _row_number)` numérote les lignes de chaque `order_id` dans l'ordre du fichier : la première reçoit 1, la deuxième 2, etc. La règle rejette celles dont le numéro est supérieur à 1, donc on garde la première, comme `keep="first"` en pandas. Il a fallu `_row_number` car une table SQL n'a pas d'ordre : sans cette colonne, on ne saurait pas quelle ligne est « la première ».
+
+**Q9.** L'analyste crée un fichier `.sql` (par exemple `revenue_by_product.sql`) dans `models/marts/`, avec un `select` sur `{{ ref('orders_clean') }}`. Il n'a pas à toucher à du Python.
+
+## Étape 5 - Tests de données et dbt build
+
+**Q10.** En cassant la règle 5, c'est le test `unique_orders_clean_order_id` qui a échoué (`FAIL 1` : la commande 1010 était en double). Le modèle `revenue_by_country` et son test `unique_revenue_by_country_country` ont été en SKIP (`PASS=9 ERROR=1 SKIP=2`). C'est ce qu'on veut : le rapport du directeur n'est pas reconstruit avec des données invalides, donc aucun chiffre faux n'est publié.
+
+**Q11.**
+
+| Contrôle du TP1 (Python) | Son équivalent dbt |
+|---|---|
+| `check_schema` | Erreur dans `stg_orders` quand une colonne manque (`Table "src" does not have a column named "unit_price"`), plus les tests `not_null` |
+| Les règles 1 à 6 dans `clean_orders` | Le `case ... when` dans `int_orders_checked.sql` |
+| `check_reject_rate` | Le test singulier `assert_reject_rate_below_20_percent` |
+| `rejected_orders.csv` | La table `orders_rejected` |
+| `PIPELINE STOPPED`, rien n'est publié | Un test qui échoue dans `dbt build` : les modèles suivants passent en SKIP et le code de sortie vaut 1 |
+
+## Étape 6 - Un test unitaire dbt
+
+**Q12.** Les données du test unitaire viennent des lignes écrites à la main dans le fichier YAML (section `given`), pas d'un CSV ni de `load_raw.py`. C'est important pour la CI de la séance 4 : le test tourne sans entrepôt rempli ni fichier de données, il est rapide et donne toujours le même résultat.
+
+## Étape 7 - Le graphe de lignage
+
+**Q13.** Si la colonne `country` arrive vide dans la source, le graphe montre tout de suite les modèles touchés : `stg_orders`, `int_orders_checked`, `orders_clean`, `orders_rejected` et `revenue_by_country`. La réponse se lit en quelques secondes. Sans le graphe, dans un dossier de 200 scripts SQL, il faudrait ouvrir les fichiers un par un et suivre les dépendances à la main, ce qui peut prendre des heures et laisse un risque d'oubli.
+
+## Étape 8 - Les jours 2 et 3
+
+**Q14.**
+
+| | Pipeline Python (TP1) | Pipeline dbt (TP3) |
+|---|---|---|
+| Jour 2 : quel contrôle arrête la chaîne ? | `check_reject_rate` : `Reject rate 100% is above the limit of 20%` | Le test `assert_reject_rate_below_20_percent` (`FAIL 1`), puis `orders_clean`, `orders_rejected` et `revenue_by_country` en SKIP |
+| Jour 3 : quel message d'erreur ? | `PIPELINE STOPPED: Missing columns: ['unit_price']` | `Binder Error: Table "src" does not have a column named "unit_price"`, `Candidate bindings: "price"` |
+| Le rapport de la veille est-il conservé ? | Oui, `revenue_by_country.csv` garde le jour 1 | Oui, `revenue_by_country` vaut toujours 8835.40 |
+| Code de sortie | 1 | 1 |
+
+**Q15.** Oui, c'est un problème : `orders_rejected` est en SKIP, donc elle contient encore les rejets du jour 1 et pas les 6 lignes rejetées du jour 2, alors que ce sont justement elles qu'on voudrait examiner. Une solution : faire lire le test du taux de rejet sur `orders_clean` et `orders_rejected` plutôt que sur `int_orders_checked`. La quarantaine du jour 2 est alors bien écrite, et seul `revenue_by_country` (le rapport publié) est bloqué.
+
+## Dernière ligne de dbt build sur le jour 1
+
+```
+Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=14
+```
