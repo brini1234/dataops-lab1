@@ -239,3 +239,9 @@ Tout programme qui lance le pipeline peut lire ce code : un planificateur de tâ
 ```
 Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=14
 ```
+
+## Bonus TP3
+
+- `dbt show --inline "select * from {{ ref('orders_rejected') }}"` affiche les 5 lignes rejetées sans écrire de Python.
+- Nouveau modèle `models/marts/revenue_by_product.sql` avec un test `unique` sur `product` : `dbt build` passe à `PASS=16` (6 modèles, 8 tests de données, 2 tests unitaires). Le total par produit vaut 8835.40, comme le rapport par pays, et le modèle apparaît dans le graphe de lignage après `orders_clean`.
+- Étape DVC `elt` (`dvc stage add`) : le premier `dvc repro` recharge le jour 1 et lance `dbt build` (PASS=16), le second affiche « Stage 'elt' didn't change, skipping ».
