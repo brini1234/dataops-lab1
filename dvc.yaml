@@ -7,3 +7,13 @@ stages:
     - run_pipeline.py
     outs:
     - data/output/revenue_by_country.csv
+  elt:
+    cmd: python load_raw.py data/raw/orders_day1.csv && dbt build
+    deps:
+    - data/raw
+    - data_tests
+    - dbt_project.yml
+    - load_raw.py
+    - models
+    outs:
+    - warehouse.duckdb
