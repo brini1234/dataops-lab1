@@ -23,3 +23,10 @@ models:
       - name: country
         data_tests:
           - unique
+
+  - name: revenue_by_product
+    description: Revenue per product, for the analysts
+    columns:
+      - name: product
+        data_tests:
+          - unique
