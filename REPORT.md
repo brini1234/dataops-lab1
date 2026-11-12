@@ -348,4 +348,78 @@ C'est un test de régression : sur l'échantillon, le bon résultat est connu, d
 
 Limite constatée : sur les PR #3 et #4, le bouton « Merge pull request » reste cliquable. GitHub signale le rouge mais ne l'interdit pas. Pour bloquer vraiment la fusion, il faudrait une règle de protection de branche sur `main` (Settings → Branches → *Require status checks to pass before merging*).
 
-<!-- TP4 bis in progress -->
+
+---
+
+# TP 4 bis - La qualité autrement
+
+## TP4bis
+
+Branche `quality-plus`, pull request **#6** (CI verte, commentaire du rapport par la CI) : https://github.com/brini1234/dataops-lab1/pull/6
+
+Les cinq défis ont été faits. Environnement : Windows, PowerShell, Python 3.14.
+
+## Défi 1 - Les hooks pre-commit
+
+- `.pre-commit-config.yaml` avec `check-yaml`, `end-of-file-fixer`, `trailing-whitespace`, `check-added-large-files` (500 Ko), `ruff` et un hook local `datacontract lint`. `pre-commit autoupdate` a passé les versions à `v6.0.0` (pre-commit-hooks) et `v0.17.4` (ruff, la même version que la CI).
+- Premier `pre-commit run --all-files` : `end-of-file-fixer` a corrigé 10 fichiers (retour à la ligne final manquant) et `trailing-whitespace` un fichier. Au second passage, tous les hooks sur **Passed**.
+- Import inutile (`import os` ajouté à `report_md.py`) : `ruff … Failed`, `F401 'os' imported but unused`, le commit n'est pas créé (`git log` ne bouge pas).
+- Fichier de 600 Ko : `check for added large files … Failed`, `big.bin (586 KB) exceeds 500 KB`.
+- Mon tout premier commit a lui-même été refusé : `.pre-commit-config.yaml` n'avait pas de retour à la ligne final. Le hook l'a corrigé, il a suffi de refaire `git add` puis `git commit`.
+
+Problèmes propres à Windows, et leur solution :
+
+- Le hook `datacontract lint` plantait avec `UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f7e2'` alors que le contrat était valide : lancé par pre-commit, Python écrivait en cp1252, qui ne connaît pas l'émoji 🟢. Corrigé avec la variable d'environnement `PYTHONUTF8=1`.
+- `end-of-file-fixer` a ajouté un `\n` à la fin de `tests/fixtures/orders_sample.csv`, dont les lignes se terminent par `\r\n` sous Windows. Le fichier mélangeait alors deux fins de ligne et DuckDB refusait de le lire (`Error when sniffing file`), alors que Pandera l'acceptait. `dbt build` a ensuite tourné sur l'ancien entrepôt sans rien signaler. Corrigé en laissant Git réécrire le fichier (`git checkout`). La CI, sous Linux, n'était pas touchée. Leçon : un outil qui corrige automatiquement un fichier peut le casser pour un autre outil ; il faut relancer le pipeline après les corrections.
+
+## Défi 2 - SQLFluff
+
+- `.sqlfluff` : dialecte `duckdb`, templater `jinja` avec `apply_dbt_builtins`, lignes de 100 caractères.
+- Premier `sqlfluff lint models data_tests` : 11 remarques (AM04, LT05, ST06, AL09, LT09).
+- `sqlfluff fix` : 8 corrigées (les `when` trop longs coupés, les alias inutiles comme `src.product as product` retirés, les colonnes de `stg_orders` réordonnées), 3 non corrigeables.
+- **AM04 exclue** (`exclude_rules = AM04`) : `int_orders_checked`, `orders_clean` et `orders_rejected` utilisent volontairement `select *` pour faire passer toutes les colonnes de l'étape précédente sans les recopier. La forme des tables est déjà vérifiée par dbt (tests et contrat sur le rapport).
+- Après correction : `dbt build` toujours `PASS=16`, rapport toujours `8835.40`.
+- SQLFluff ajouté au job `lint` de la CI (`pip install ruff sqlfluff`, puis `sqlfluff lint models data_tests`) : vert sur la PR #6.
+
+## Défi 3 - dbt plus loin
+
+- **3a, contrat sur le rapport** : `revenue_by_country` avec `contract: enforced: true`, `country` en `varchar`, `revenue` en `decimal(38,2)`. La construction passe. En renommant `as revenue` en `as total_revenue` : `This model has an enforced contract that failed`, avec `revenue … missing in definition` et `total_revenue … missing in contract`.
+- **3b, fraîcheur** : `loaded_at_field: _loaded_at`, avertissement après 12 h, erreur après 24 h. `dbt source freshness` : `PASS`. Avec `error_after: {count: 1, period: minute}` : `ERROR STALE freshness of raw.orders`.
+- **3c, avertir ou bloquer** : `severity: warn` sur `accepted_values` de `orders_clean`. Sans « Germany » dans la liste, `dbt build --store-failures` donne `WARN 1` puis `PASS=15 WARN=1 ERROR=0` : la suite est construite quand même. La table d'audit (`main_dbt_test__audit`, nom raccourci par dbt en `accepted_values_orders_clean_4eb61e93…`) contient `Germany | 3` : les 3 commandes allemandes à examiner.
+
+## Défi 4 - Une CI qui parle
+
+- `paths-ignore: ["**.md"]`, `concurrency` (`group: ci-${{ github.ref }}`, `cancel-in-progress: true`), `permissions: pull-requests: write` sur `data-quality`, et une étape qui écrit le rapport en commentaire de la PR avec `gh pr comment … --edit-last || gh pr comment …`.
+- Premier passage (CI #19) : les 3 jobs verts et un commentaire de `github-actions` sur la PR #6 avec le tableau des 5 pays et `Total: 8835.40`.
+- Deux pushs rapprochés : CI #20 (« Document report_md.py ») **annulée** au bout de 9 s par `concurrency`, CI #21 (« Note the reference total ») verte.
+- Après ces exécutions, il n'y a toujours **qu'un seul** commentaire de la CI : `--edit-last` réutilise le commentaire existant au lieu d'en ajouter un. GitHub n'affiche pas « edited » parce que le texte (même tableau, même total) n'a pas changé.
+- Push ne touchant que `REPORT.md` (« Start TP4 bis report ») : **aucune** exécution, grâce à `paths-ignore`.
+
+## Défi 5 - Soda
+
+- La commande de l'énoncé (`pip install soda-core-duckdb`, Soda v3) ne pouvait pas marcher ici : `soda-core-duckdb` 3.5.6 exige `duckdb<1.1.0`, version qui n'existe pas pour Python 3.14 sous Windows. Et même installée, une DuckDB 1.0 ne lirait pas l'entrepôt créé par la 1.5.6 (le même problème qu'au TP4).
+- J'ai donc utilisé **Soda v4** (`pip install soda-duckdb`, dans `.venv-soda`, ignoré par Git), qui accepte DuckDB 1.2 à 2 : version 1.5.6 dans les deux environnements. Soda v4 écrit les règles sous forme de **contrats** (`soda contract verify`), avec les mêmes contrôles que l'énoncé.
+- `soda/revenue_by_country.yml` : `row_count` = 5, `country` sans valeur manquante ni doublon, `min(revenue) > 0` → **4/4 Passed** (`min: 542.5`).
+- `soda/orders_clean.yml` : `row_count > 0`, `country` dans les 5 pays, `customer_id` jamais vide → **3/3 Passed** (30 lignes).
+- Avec `row_count` = 6 : `❌ FAILED`, `must be: 6` face à `check_rows_tested: 5` (la valeur trouvée), `Failed 1`, code de sortie 1.
+
+## Comparer les outils
+
+| Outil | Quand il tourne | Ce qu'il regarde | Ce que j'en retiens |
+|---|---|---|---|
+| pre-commit | À chaque `git commit`, sur mon poste | Les fichiers que je commite | Le retour le plus rapide : l'erreur est vue avant même d'exister dans l'historique. Mais il peut être contourné (`--no-verify`) et dépend du poste (Windows m'a posé deux problèmes), donc il ne remplace pas la CI. |
+| ruff, SQLFluff | Sur mon poste et dans la CI | Le style du Python et du SQL | Des règles communes pour toute l'équipe, appliquées sans discussion ; `fix` corrige seul la plupart des remarques. Il faut parfois exclure une règle, en écrivant pourquoi. |
+| Contrat ODCS | Avant le chargement | La forme du fichier reçu | Un document lisible, partagé avec le fournisseur, qui dit ce qu'il a le droit d'envoyer. Il voit le renommage de colonne, pas les montants faux. |
+| Pandera | Au chargement | Le fichier entier, en Python | Il juge la plausibilité d'une colonne entière : c'est le seul contrôle d'entrée qui attrape les prix en centimes du jour 2. |
+| Tests et contrats dbt | Pendant `dbt build` | Les tables construites | Là où vivent les règles métier ; un test en échec empêche de publier le rapport. Le contrat protège ceux qui lisent la sortie, et `severity: warn` permet de prévenir sans bloquer. |
+| Fraîcheur dbt | Quand on lance `dbt source freshness` | L'âge des données | Le seul contrôle qui voit une panne silencieuse : un rapport correct mais construit sur des données de la veille. |
+| Soda | Quand on veut, sur n'importe quelle table | Les tables, avec ou sans dbt | Utile pour surveiller des tables que dbt ne construit pas ; mais dépendant des versions (v3 incompatible avec mon DuckDB). |
+| CI GitHub Actions | À chaque pull request et chaque nuit | Tout ce qui précède | Le seul passage obligé, identique pour tout le monde, sur une machine neuve : c'est elle qui rend les autres outils efficaces. |
+
+## R8 - Trois outils pour le projet de semestre
+
+1. **La CI GitHub Actions.** C'est le seul contrôle qu'on ne peut pas oublier ou contourner : elle tourne pour tout le monde, sur une machine neuve, à chaque pull request. Sans elle, les autres outils dépendent de la bonne volonté de chacun (pre-commit se désactive avec `--no-verify`). Elle porte aussi les deux suivants.
+2. **Les tests et contrats dbt.** C'est là que vivent les règles métier et le rapport final. Un test en échec bloque la publication d'un chiffre faux, le contrat protège ceux qui lisent la sortie, et `severity: warn` distingue ce qui doit bloquer de ce qui doit seulement prévenir. Avec la fraîcheur, qui est dans le même outil, on voit aussi les données trop vieilles.
+3. **Pandera à l'entrée.** Au TP1 et au TP4, le jour le plus dangereux était le jour 2 : une erreur silencieuse sur les valeurs, pas sur la forme. Pandera est le seul contrôle d'entrée qui l'attrape, et il refuse aussi le renommage de colonne du jour 3. Il fait donc le travail du contrat ODCS en plus.
+
+J'ai écarté à regret le contrat ODCS (un excellent document à partager avec un fournisseur, mais Pandera couvre déjà ses contrôles techniques) et pre-commit (très confortable, mais redondant avec la CI).
