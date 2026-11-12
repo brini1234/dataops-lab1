@@ -347,3 +347,5 @@ C'est un test de régression : sur l'échantillon, le bon résultat est connu, d
 | Résultat qui change sans raison | chiffre de référence 8835.40 | job `data-quality` |
 
 Limite constatée : sur les PR #3 et #4, le bouton « Merge pull request » reste cliquable. GitHub signale le rouge mais ne l'interdit pas. Pour bloquer vraiment la fusion, il faudrait une règle de protection de branche sur `main` (Settings → Branches → *Require status checks to pass before merging*).
+
+<!-- TP4 bis in progress -->
