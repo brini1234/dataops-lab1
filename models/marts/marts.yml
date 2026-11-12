@@ -1,4 +1,4 @@
-﻿version: 2
+version: 2
 
 models:
   - name: orders_clean
@@ -16,13 +16,21 @@ models:
           - accepted_values:
               arguments:
                 values: ["France", "Germany", "Italy", "Morocco", "Tunisia"]
+              config:
+                severity: warn
 
   - name: revenue_by_country
     description: Revenue per country, read by the sales director
+    config:
+      contract:
+        enforced: true
     columns:
       - name: country
+        data_type: varchar
         data_tests:
           - unique
+      - name: revenue
+        data_type: decimal(38,2)
 
   - name: revenue_by_product
     description: Revenue per product, for the analysts
