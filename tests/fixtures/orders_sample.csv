@@ -1,4 +1,4 @@
-order_id,order_date,customer_id,country,product,quantity,unit_price
+order_id,order_date,customer_id,country,product,quantity,price
 1001,2026-10-05,C036,Italy,Office chair,4,449.0
 1002,2026-10-05,C033,Italy,Office chair,2,449.0
 1003,2026-10-05,C033,France,Monitor,2,229.0
