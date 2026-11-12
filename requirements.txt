@@ -3,3 +3,6 @@ pytest>=7.0
 dvc>=3.0
 duckdb>=1.1
 dbt-duckdb>=1.9
+ruff>=0.6
+pandera[pandas]>=0.24
+datacontract-cli[duckdb]>=0.10
