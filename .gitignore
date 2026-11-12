@@ -8,3 +8,4 @@ warehouse.duckdb.wal
 target/
 logs/
 .user.yml
+.venv-soda/

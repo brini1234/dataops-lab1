@@ -1,0 +1,6 @@
+type: duckdb
+name: shop
+connection:
+  database: warehouse.duckdb
+  read_only: true
+  schema: main

@@ -1,0 +1,13 @@
+dataset: shop/main/orders_clean
+checks:
+  - row_count:
+      threshold:
+        must_be_greater_than: 0
+columns:
+  - name: country
+    checks:
+      - invalid:
+          valid_values: [France, Germany, Italy, Morocco, Tunisia]
+  - name: customer_id
+    checks:
+      - missing:

@@ -1,0 +1,16 @@
+dataset: shop/main/revenue_by_country
+checks:
+  - row_count:
+      threshold:
+        must_be: 5
+columns:
+  - name: country
+    checks:
+      - missing:
+      - duplicate:
+  - name: revenue
+    checks:
+      - aggregate:
+          function: min
+          threshold:
+            must_be_greater_than: 0
