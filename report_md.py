@@ -20,3 +20,4 @@ def main(expected=None):
 
 if __name__ == "__main__":
     main(float(sys.argv[1]) if len(sys.argv) > 1 else None)
+# Report printed in the CI summary and as a PR comment
