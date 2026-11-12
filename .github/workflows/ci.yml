@@ -1,13 +1,54 @@
-﻿name: CI
-on: [push, pull_request]
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  python-tests:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
       - run: pip install -r requirements.txt
-      - name: Code tests
-        run: python -m pytest
+      - run: python -m pytest
+
+  data-quality:
+    needs: python-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Data contract on the sample
+        run: datacontract test --server ci contracts/orders.yaml
+      - name: Pandera check, then load the sample
+        run: python load_raw.py tests/fixtures/orders_sample.csv
+      - name: dbt build (models, data tests, unit tests)
+        run: dbt build
+      - name: Report and reference number
+        run: python report_md.py 8835.40 >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the dbt results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-results
+          path: target/run_results.json

@@ -1,12 +1,23 @@
 import sys
 
 import duckdb
+import pandas as pd
+import pandera.errors
+
+from pipeline.schema import RAW_ORDERS
 
 WAREHOUSE = "warehouse.duckdb"
 
 
 def main(path):
     """Extract + Load: copy the raw file into the warehouse, exactly as it is."""
+    try:
+        RAW_ORDERS.validate(pd.read_csv(path), lazy=True)
+    except pandera.errors.SchemaErrors as error:
+        print(f"REFUSED: {path} does not match the expected schema")
+        print(error.failure_cases[["column", "check", "failure_case"]].to_string(index=False))
+        sys.exit(1)
+
     con = duckdb.connect(WAREHOUSE)
     con.execute("CREATE SCHEMA IF NOT EXISTS raw")
     con.execute(

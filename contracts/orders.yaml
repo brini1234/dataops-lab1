@@ -1,0 +1,54 @@
+version: 1.0.0
+kind: DataContract
+apiVersion: v3.2.0
+id: orders
+name: Commandes quotidiennes de la boutique
+status: draft
+servers:
+  - server: ci
+    type: local
+    format: csv
+    path: ./tests/fixtures/orders_sample.csv
+  - server: day2
+    type: local
+    format: csv
+    path: ./data/raw/orders_day2.csv
+  - server: day3
+    type: local
+    format: csv
+    path: ./data/raw/orders_day3.csv
+description:
+  purpose: Un fichier CSV par jour, une ligne par commande.
+schema:
+  - name: orders
+    physicalType: table
+    properties:
+      - name: order_id
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: order_date
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: customer_id
+        physicalType: string
+        logicalType: string
+      - name: country
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: product
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: quantity
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: unit_price
+        physicalType: decimal
+        logicalType: number
+        required: true
+team:
+  name: equipe-ventes

@@ -4,6 +4,7 @@ import pytest
 from pipeline.transform import clean_orders, revenue_by_country
 from pipeline.validate import DataQualityError, check_schema
 
+
 def make_orders(rows):
     """Build a small orders table. Each row only gives the columns it wants to change."""
     default = {
