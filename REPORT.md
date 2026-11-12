@@ -245,3 +245,105 @@ Done. PASS=14 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=14
 - `dbt show --inline "select * from {{ ref('orders_rejected') }}"` affiche les 5 lignes rejetées sans écrire de Python.
 - Nouveau modèle `models/marts/revenue_by_product.sql` avec un test `unique` sur `product` : `dbt build` passe à `PASS=16` (6 modèles, 8 tests de données, 2 tests unitaires). Le total par produit vaut 8835.40, comme le rapport par pays, et le modèle apparaît dans le graphe de lignage après `orders_clean`.
 - Étape DVC `elt` (`dvc stage add`) : le premier `dvc repro` recharge le jour 1 et lance `dbt build` (PASS=16), le second affiche « Stage 'elt' didn't change, skipping ».
+
+
+
+---
+
+# TP 4 - Une vraie porte de qualité : contrat, Pandera et GitHub Actions
+
+## TP4
+
+**Liens à rendre**
+
+- Exécution verte du workflow CI sur `main` (CI #12, « Merge pull request #1 from brini1234/quality-gate ») : <https://github.com/brini1234/dataops-lab1/actions/runs/43233304641>
+- Exécution manuelle du workflow Nightly sur `main` (Nightly #1, `workflow_dispatch`) : <https://github.com/brini1234/dataops-lab1/actions/runs/43236399756>
+
+Pull requests : #1 `quality-gate` (fusionnée), #2 `nightly` (fusionnée), #3 `supplier-new-format` (rouge, fermée sans fusion), #4 `relax-quantity-rule` (rouge, fermée sans fusion).
+
+## Étape 0 - Pourquoi la CI devient rouge sans que personne ne touche au code
+
+L'historique de l'onglet Actions raconte toute l'histoire :
+
+| Exécutions | Ce qui s'est passé |
+|---|---|
+| CI #1 ✅ « Add CI workflow » | TP1 : les CSV sont dans Git, la CI trouve `data/raw/orders_day1.csv` |
+| CI #2 à #8 ❌ | TP2 : les CSV passent sous DVC (tags `data-v1`, `data-v2`). Ils ne sont plus dans Git, seulement leur empreinte (`data/raw.dvc`). La machine de GitHub fait un `git checkout` neuf et ne trouve plus le fichier : `FileNotFoundError`. Le code du pipeline n'a pas changé, c'est l'endroit où vivent les données qui a changé |
+| CI #9 ✅ « Run only the code tests in CI » | Je l'avais rendue verte au TP3 en ne lançant plus que pytest. La CI était verte, mais elle ne vérifiait plus du tout les données |
+| CI #11 (PR #1) puis #12 (`main`) ✅ | TP4 : la CI vérifie de nouveau les données, sur un échantillon versionné dans Git |
+
+## Étape 1 - Échantillon et outils
+
+- `tests/fixtures/orders_sample.csv` est une copie du jour 1 (35 commandes, résultat connu : 8835.40). Il est dans **Git**, pas dans DVC : c'est un petit fichier de test qui ne change pas, et la CI peut le trouver.
+- `ruff check .` : la version installée (ruff 0.17) vérifie aussi l'ordre des imports (règle I001). Trois fichiers étaient signalés (`pipeline/extract.py`, `pipeline/load.py`, `tests/test_pipeline.py`) ; `ruff check . --fix` a ajouté la ligne vide manquante. Ensuite : `All checks passed!`.
+- Avec une ligne `import os` ajoutée en haut de `run_pipeline.py` : `F401 'os' imported but unused`. Ruff attrape l'erreur sans exécuter le code.
+- `python -m pytest` : `6 passed`.
+- `pip install` a remplacé DuckDB 2.0.0 par **1.5.6** (datacontract-cli exige une version 1.x). L'ancien `warehouse.duckdb` n'était plus lisible : je l'ai supprimé et reconstruit, ce qui ne pose aucun problème puisqu'il est dans `.gitignore` et se reconstruit à partir du brut. `dbt build` : `PASS=16` (les 14 du TP, plus `revenue_by_product` et son test `unique`, ajoutés en bonus au TP3).
+
+## Étape 2 - Le contrat de données (ODCS v3.2)
+
+| Commande | Résultat |
+|---|---|
+| `datacontract lint` | `Data contract is valid against ODCS v3.2.0` |
+| `test --server ci` | valide, 13 checks |
+| `test --server day2` | valide, 13 checks |
+| `test --server day3` | invalide : `Required column 'unit_price' is missing` et `missing_count(unit_price) was 6`, code de sortie **1** |
+
+Les 13 contrôles vérifient seulement la **forme** du fichier : chaque colonne est présente et les champs `required` ne sont jamais vides. Le contrat ne regarde pas les montants : c'est pour ça que le jour 2, avec ses prix en centimes, passe.
+
+## Étape 3 - Pandera à l'entrée du chargement
+
+| Fichier | Résultat de `load_raw.py` | Code |
+|---|---|---|
+| Jour 1 | `Loaded 35 rows … into raw.orders` | 0 |
+| Jour 2 | `REFUSED` : `unit_price  more than 20 % of the prices are implausible` | 1 |
+| Jour 3 | `REFUSED` : `column_in_schema price` (colonne en trop) et `column_in_dataframe unit_price` (colonne manquante) | 1 |
+
+Après les deux refus, `raw.orders` contient toujours les 35 lignes du jour 1 : rien n'a été chargé. Le contrat attrape le jour 3 mais pas le jour 2 ; Pandera attrape les deux, car `_mostly_plausible` juge la colonne des prix **entière** (un seul prix aberrant irait en quarantaine dans dbt, des centimes partout sont refusés), et `strict=True` refuse une colonne en trop ou en moins.
+
+## Étape 4 - Le rapport et le chiffre de référence
+
+- `python report_md.py 8835.40` : France 1646.50, Germany 542.50, Italy 2980.40, Morocco 2113.50, Tunisia 1552.50, `Total: 8835.40`, code **0**.
+- `python report_md.py 9999` : `REGRESSION: expected 9999.00, got 8835.40`, code **1**.
+
+C'est un test de régression : sur l'échantillon, le bon résultat est connu, donc tout changement qui le modifie fait échouer la CI.
+
+## Étape 5 - Le workflow CI en trois jobs
+
+- PR #1 `quality-gate` → `main` : `lint` (10 s), puis `python-tests` (57 s), puis `data-quality` (48 s), tous verts, enchaînés par `needs`.
+- Le résumé de l'exécution (`$GITHUB_STEP_SUMMARY`) affiche le tableau des 5 pays et `Total: 8835.40`.
+- L'artefact `dbt-results` (3,86 Ko) contient `target/run_results.json`.
+- Après la fusion, la CI #12 a tourné sur `main` (`on: push`) : verte.
+- Annotations : un avertissement « Node.js 20 is deprecated » (les actions `checkout@v4` et `setup-python@v5`) et une notice sur le passage de `ubuntu-latest` à Ubuntu 26. Ce sont des messages de GitHub, pas des erreurs du projet ; ils montrent qu'un projet peut avoir besoin d'entretien même quand personne ne touche au code.
+
+## Étape 6 - Le workflow de nuit
+
+- `nightly.yml` : `schedule` avec `cron: "0 5 * * *"` (chaque jour à 5 h UTC, soit 6 h heure locale) et `workflow_dispatch` (bouton **Run workflow**).
+- PR #2 fusionnée, puis Nightly #1 lancé à la main sur `main` : job `rebuild-and-docs` vert en 57 s.
+- L'artefact `dbt-docs` contient `index.html`, `manifest.json` et `catalog.json`. Ouvert par double-clic, `index.html` affiche « unable to load the manifest file » : le navigateur refuse de lire `manifest.json` en `file://`. Servi avec `python -m http.server 8080` sur `http://localhost:8080`, la documentation et le graphe de lignage s'affichent.
+
+## Étape 7 - La pull request du fournisseur (`unit_price` → `price`)
+
+- PR #3, une seule ligne changée (l'en-tête de l'échantillon).
+- `lint` ✅ (8 s) et `python-tests` ✅ (41 s) : le code n'a pas changé.
+- `data-quality` ❌ à l'étape **Data contract on the sample** : `Required column 'unit_price' is missing` et `missing_count(unit_price) was 35, expected = 0`, `exit code 1`. Les étapes suivantes (Pandera, dbt build, rapport) sont sautées ; seule `Keep the dbt results` tourne, grâce à `if: always()`.
+- GitHub affiche « Some checks were not successful ». PR fermée sans fusion.
+
+## Étape 8 - La pull request d'un collègue (quantité > -5)
+
+- PR #4 : `> 0` devient `> -5` dans `pipeline/transform.py`, et `quantity <= 0` devient `quantity <= -5` dans `int_orders_checked.sql`.
+- Déjà en local, `python -m pytest` donne `1 failed, 5 passed`.
+- Sur la PR : `lint` ✅, `python-tests` ❌ (`FAILED tests/test_pipeline.py::test_negative_quantity_is_rejected - assert [1, 2] == [2]`), `data-quality` **non lancé** grâce à `needs`. PR fermée sans fusion.
+- C'est la même erreur qu'à la Q9 du TP1, mais cette fois c'est la machine qui la voit, avant la fusion, sans que personne ait à y penser.
+
+## Bilan
+
+| Changement | Qui l'attrape | Où |
+|---|---|---|
+| Erreur de style (`import os` inutile) | ruff | job `lint` |
+| Erreur de logique dans le code (règle des quantités) | tests unitaires | job `python-tests` |
+| Colonne renommée par le fournisseur | contrat ODCS (et Pandera) | job `data-quality` |
+| Valeurs aberrantes (prix en centimes) | Pandera | job `data-quality` |
+| Résultat qui change sans raison | chiffre de référence 8835.40 | job `data-quality` |
+
+Limite constatée : sur les PR #3 et #4, le bouton « Merge pull request » reste cliquable. GitHub signale le rouge mais ne l'interdit pas. Pour bloquer vraiment la fusion, il faudrait une règle de protection de branche sur `main` (Settings → Branches → *Require status checks to pass before merging*).
