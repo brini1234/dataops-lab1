@@ -393,7 +393,7 @@ Problèmes propres à Windows, et leur solution :
 - Premier passage (CI #19) : les 3 jobs verts et un commentaire de `github-actions` sur la PR #6 avec le tableau des 5 pays et `Total: 8835.40`.
 - Deux pushs rapprochés : CI #20 (« Document report_md.py ») **annulée** au bout de 9 s par `concurrency`, CI #21 (« Note the reference total ») verte.
 - Après ces exécutions, il n'y a toujours **qu'un seul** commentaire de la CI : `--edit-last` réutilise le commentaire existant au lieu d'en ajouter un. GitHub n'affiche pas « edited » parce que le texte (même tableau, même total) n'a pas changé.
-- Push ne touchant que `REPORT.md` (« Start TP4 bis report ») : **aucune** exécution, grâce à `paths-ignore`.
+- Push ne touchant que `REPORT.md` sur la PR #6 : la CI a **quand même** tourné (exécutions #22 et #25). Pour un `pull_request`, GitHub applique `paths-ignore` à l'ensemble des fichiers modifiés par la PR, et non au dernier commit seul ; comme la PR #6 modifie aussi du Python, du SQL et du YAML, le filtre ne s'applique pas. Il joue pleinement sur les `push` vers `main` : ce correctif du rapport, poussé directement sur `main` et ne contenant que du Markdown, n'a lancé aucune exécution.
 
 ## Défi 5 - Soda
 
