@@ -33,7 +33,7 @@ def clean_orders(df):
 
     # Rule 6 - validity: the shop only sells to these countries
     _flag(df, ~df["country"].isin(ALLOWED_COUNTRIES), "unknown_country")
-    
+
     rejected = df[df["reject_reason"].notna()]
     clean = df[df["reject_reason"].isna()].drop(columns="reject_reason")
     return clean, rejected

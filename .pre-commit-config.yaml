@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff
+  - repo: local
+    hooks:
+      - id: datacontract-lint
+        name: datacontract lint
+        entry: datacontract lint contracts/orders.yaml
+        language: system
+        files: ^contracts/
+        pass_filenames: false
