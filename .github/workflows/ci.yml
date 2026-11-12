@@ -2,8 +2,14 @@ name: CI
 
 on:
   pull_request:
+    paths-ignore: ["**.md"]
   push:
     branches: [main]
+    paths-ignore: ["**.md"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -32,6 +38,9 @@ jobs:
   data-quality:
     needs: python-tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,3 +62,10 @@ jobs:
         with:
           name: dbt-results
           path: target/run_results.json
+      - name: Comment the report on the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python report_md.py > report.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file report.md --edit-last || gh pr comment ${{ github.event.pull_request.number }} --body-file report.md
